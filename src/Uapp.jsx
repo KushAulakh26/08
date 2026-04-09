@@ -77,7 +77,7 @@ input[type="date"]{color-scheme:dark;}
 .nav-item{width:100%;display:flex;align-items:center;gap:9px;padding:8px 10px;border-radius:var(--radius-sm);margin-bottom:2px;cursor:pointer;border:none;font-family:'DM Sans',sans-serif;font-size:13px;font-weight:500;text-align:left;background:transparent;transition:all .15s;color:var(--text2);-webkit-tap-highlight-color:transparent;}
 .nav-item:hover{background:var(--surface3);color:var(--text);}
 .nav-item.active{background:var(--accent-dim);color:#a5b4fc;border:1.5px solid var(--border2);}
-.task-row{position:relative;border-radius:var(--radius);border:1.5px solid var(--border);cursor:pointer;overflow:hidden;transition:all .15s;background:var(--surface);-webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent;touch-action:pan-y;}
+.task-row{position:relative;border-radius:var(--radius);border:1.5px solid var(--border);cursor:pointer;overflow:hidden;transition:all .15s;background:var(--surface);-webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent;touch-action:manipulation;}
 .task-row:hover{border-color:var(--border2);transform:translateY(-1px);box-shadow:0 4px 20px rgba(0,0,0,.3);}
 .task-row.selected{border-color:var(--accent);background:rgba(99,102,241,.08);}
 .task-row.done{opacity:.45;}
@@ -407,6 +407,23 @@ export default function App(){
   const isTouchRef=useRef(false);
   const touchColRef=useRef(null);const touchTaskRef=useRef(null);
   const longPressTimer=useRef(null);const taskLongPressTimer=useRef(null);
+  const bodyScrollLockedRef=useRef(false);
+
+  const lockBodyScroll=useCallback(()=>{
+    if(bodyScrollLockedRef.current)return;
+    bodyScrollLockedRef.current=true;
+    document.body.style.overflow='hidden';
+    document.documentElement.style.overflow='hidden';
+    document.body.style.touchAction='none';
+  },[]);
+
+  const unlockBodyScroll=useCallback(()=>{
+    if(!bodyScrollLockedRef.current)return;
+    bodyScrollLockedRef.current=false;
+    document.body.style.overflow='';
+    document.documentElement.style.overflow='';
+    document.body.style.touchAction='';
+  },[]);
 
   useEffect(()=>{(async()=>{try{const[dt,de2,dp,dtg,dcat]=await Promise.all([dbGetAll('tasks'),dbGetAll('events'),dbGetAll('projects'),dbGetAll('tags'),dbGetAll('categories')]);if(dt.length>0)setTasks(dt);if(de2.length>0)setEvents(de2);if(dp.length>0)setProjects(dp);if(dtg.length>0)setTags(dtg);if(dcat.length>0){setCategories(dcat);setVisCats(dcat.map(c=>c.id));}}catch(e){}setDbLoaded(true);})();},[]);
   useEffect(()=>{if(dbLoaded)dbPutAll('tasks',tasks).catch(()=>{});},[tasks,dbLoaded]);
@@ -414,7 +431,7 @@ export default function App(){
   useEffect(()=>{if(dbLoaded)dbPutAll('projects',projects).catch(()=>{});},[projects,dbLoaded]);
   useEffect(()=>{if(dbLoaded)dbPutAll('tags',tags).catch(()=>{});},[tags,dbLoaded]);
   useEffect(()=>{if(dbLoaded)dbPutAll('categories',categories).catch(()=>{});},[categories,dbLoaded]);
-  useEffect(()=>()=>{clearTimeout(longPressTimer.current);clearTimeout(taskLongPressTimer.current);if(autoScrollRef.current)cancelAnimationFrame(autoScrollRef.current);},[]);
+  useEffect(()=>()=>{clearTimeout(longPressTimer.current);clearTimeout(taskLongPressTimer.current);if(autoScrollRef.current)cancelAnimationFrame(autoScrollRef.current);unlockBodyScroll();},[unlockBodyScroll]);
 
   const selectedTask=useMemo(()=>tasks.find(t=>t.id===selectedTaskId),[tasks,selectedTaskId]);
   const inboxTasks=useMemo(()=>tasks.filter(t=>t.status==='inbox'),[tasks]);
@@ -524,41 +541,129 @@ export default function App(){
     if(modalOpen)return;isTouchRef.current=true;
     const t=e.touches[0];if(!t)return;
     const resEl=e.target.closest('[data-resize]');const evEl=e.target.closest('[data-event-id]');
-    touchColRef.current={startX:t.clientX,startY:t.clientY,dateStr,evId:evEl?.dataset?.eventId||null,isRec:evEl?.dataset?.recurring==='true',resDir:resEl?.dataset?.resize||null,startTime:Date.now(),moved:false,dragging:false};
-    if(evEl||resEl){clearTimeout(longPressTimer.current);longPressTimer.current=setTimeout(()=>{const tc=touchColRef.current;if(!tc||tc.moved)return;tc.dragging=true;
-      if(tc.resDir){dragRef.current={type:`resize-${tc.resDir}`,eventId:tc.evId,dateStr};setDragType(`resize-${tc.resDir}`);setResId(tc.evId);startAS();}
-      else if(tc.evId&&!tc.isRec){const ev=evRef.current.find(x=>x.id===tc.evId);if(!ev)return;const min=getMinR(tc.startY,dateStr);dragRef.current={type:'move',eventId:tc.evId,dateStr,offMin:min-ev.startMin,moved:false};setDragType('move');setMovId(tc.evId);startAS();}
-    },400);}
-  },[modalOpen,getMinR,startAS]);
+    touchColRef.current={startX:t.clientX,startY:t.clientY,dateStr,evId:evEl?.dataset?.eventId||null,isRec:evEl?.dataset?.recurring==='true',resDir:resEl?.dataset?.resize||null,startTime:Date.now(),moved:false,dragging:false,pressActivated:false};
+    clearTimeout(longPressTimer.current);
+    longPressTimer.current=setTimeout(()=>{
+      const tc=touchColRef.current;if(!tc||tc.moved||tc.dragging)return;
+      tc.pressActivated=true;
+      tc.dragging=true;
+      lockBodyScroll();
+      if(tc.resDir){
+        dragRef.current={type:`resize-${tc.resDir}`,eventId:tc.evId,dateStr};
+        setDragType(`resize-${tc.resDir}`);
+        setResId(tc.evId);
+        startAS();
+        return;
+      }
+      if(tc.evId&&!tc.isRec){
+        const ev=evRef.current.find(x=>x.id===tc.evId);if(!ev)return;
+        const min=getMinR(tc.startY,dateStr);
+        dragRef.current={type:'move',eventId:tc.evId,dateStr,offMin:min-ev.startMin,moved:false};
+        setDragType('move');
+        setMovId(tc.evId);
+        startAS();
+        return;
+      }
+      const min=getMin(tc.startY,tc.dateStr);
+      dragRef.current={type:'create',dateStr:tc.dateStr,startMin:min,curMin:min};
+      setDragType('create');
+      setSelection({dateStr:tc.dateStr,startMin:min,endMin:min+SN});
+      startAS();
+    },180);
+  },[modalOpen,getMin,getMinR,startAS,lockBodyScroll]);
 
   const onTaskTouchStart=useCallback((e,taskId,title,timeEst)=>{
     isTouchRef.current=true;const t=e.touches[0];if(!t)return;
     touchTaskRef.current={taskId,title,timeEst:timeEst||30,startX:t.clientX,startY:t.clientY,active:false};
     clearTimeout(taskLongPressTimer.current);
-    taskLongPressTimer.current=setTimeout(()=>{const tt=touchTaskRef.current;if(!tt)return;tt.active=true;setTouchDragTask({taskId:tt.taskId,title:tt.title,x:tt.startX,y:tt.startY});},400);
-  },[]);
+    taskLongPressTimer.current=setTimeout(()=>{
+      const tt=touchTaskRef.current;if(!tt)return;
+      tt.active=true;
+      lockBodyScroll();
+      setTouchDragTask({taskId:tt.taskId,title:tt.title,x:tt.startX,y:tt.startY});
+    },180);
+  },[lockBodyScroll]);
 
   useEffect(()=>{
     const onTouchMove=(e)=>{
       const t=e.touches[0];if(!t)return;lastMouseY.current=t.clientY;
       const tc=touchColRef.current;
-      if(tc&&!tc.dragging&&!tc.moved){const dx=Math.abs(t.clientX-tc.startX),dy=Math.abs(t.clientY-tc.startY);if(dx>10||dy>10){tc.moved=true;clearTimeout(longPressTimer.current);if(!tc.evId&&!tc.resDir&&dy>15){tc.dragging=true;const min=getMin(tc.startY,tc.dateStr);dragRef.current={type:'create',dateStr:tc.dateStr,startMin:min,curMin:min};setDragType('create');setSelection({dateStr:tc.dateStr,startMin:min,endMin:min+SN});startAS();}}}
+      if(tc&&!tc.dragging&&!tc.moved){
+        const dx=Math.abs(t.clientX-tc.startX),dy=Math.abs(t.clientY-tc.startY);
+        if(dx>10||dy>10){
+          tc.moved=true;
+          clearTimeout(longPressTimer.current);
+          if(tc.pressActivated){
+            tc.dragging=true;
+            lockBodyScroll();
+          }else{
+            touchColRef.current=null;
+          }
+        }
+      }
       if(tc&&tc.dragging&&dragRef.current?.type){e.preventDefault();handleDragMove(t.clientX,t.clientY);}
       const tt=touchTaskRef.current;
-      if(tt&&!tt.active){const dx=Math.abs(t.clientX-tt.startX),dy=Math.abs(t.clientY-tt.startY);if(dx>10||dy>10){clearTimeout(taskLongPressTimer.current);touchTaskRef.current=null;return;}}
+      if(tt&&!tt.active){
+        const dx=Math.abs(t.clientX-tt.startX),dy=Math.abs(t.clientY-tt.startY);
+        if(dx>10||dy>10){clearTimeout(taskLongPressTimer.current);touchTaskRef.current=null;return;}
+      }
       if(tt&&tt.active){e.preventDefault();setTouchDragTask(prev=>prev?{...prev,x:t.clientX,y:t.clientY}:null);}
     };
     const onTouchEnd=(e)=>{
       clearTimeout(longPressTimer.current);clearTimeout(taskLongPressTimer.current);
       const ct=e.changedTouches?.[0];const tc=touchColRef.current;
-      if(tc){if(tc.dragging){handleDragEnd();}else if(!tc.moved){const elapsed=Date.now()-tc.startTime;if(elapsed<500){if(tc.evId){const ev=evRef.current.find(x=>x.id===tc.evId);if(ev){setEditEv({...ev});setModalOpen(true);}}else{const min=getMin(tc.startY,tc.dateStr);setDs(min);setDe(Math.min(min+30,1440));setSelDate(tc.dateStr);setEditEv(null);setModalOpen(true);}}}touchColRef.current=null;}
+      if(tc){
+        if(tc.dragging){
+          handleDragEnd();
+        }else if(!tc.moved){
+          const elapsed=Date.now()-tc.startTime;
+          if(elapsed<500){
+            if(tc.evId){
+              const ev=evRef.current.find(x=>x.id===tc.evId);
+              if(ev){setEditEv({...ev});setModalOpen(true);}
+            }else{
+              const min=getMin(tc.startY,tc.dateStr);
+              setDs(min);setDe(Math.min(min+30,1440));setSelDate(tc.dateStr);setEditEv(null);setModalOpen(true);
+            }
+          }
+        }
+        touchColRef.current=null;
+      }
       const tt=touchTaskRef.current;
-      if(tt&&tt.active&&ct){const col=findCol(ct.clientX);if(col){const el=colRefs.current[col];if(el){const min=yToM(ct.clientY-el.getBoundingClientRect().top);const dur=tt.timeEst||30;const task=tasksRef.current.find(x=>x.id===tt.taskId);setEvents(p=>[...p,{id:'e'+Date.now(),title:task?.title||tt.title,date:col,startMin:min,endMin:Math.min(min+dur,1440),category:'work',recurrence:'none',recurrenceEnd:'',taskId:tt.taskId,description:''}]);addToast('Task scheduled');}}setTouchDragTask(null);touchTaskRef.current=null;}else{touchTaskRef.current=null;setTouchDragTask(null);}
+      if(tt&&tt.active&&ct){
+        const col=findCol(ct.clientX);
+        if(col){
+          const el=colRefs.current[col];
+          if(el){
+            const min=yToM(ct.clientY-el.getBoundingClientRect().top);
+            const dur=tt.timeEst||30;
+            const task=tasksRef.current.find(x=>x.id===tt.taskId);
+            setEvents(p=>[...p,{id:'e'+Date.now(),title:task?.title||tt.title,date:col,startMin:min,endMin:Math.min(min+dur,1440),category:'work',recurrence:'none',recurrenceEnd:'',taskId:tt.taskId,description:''}]);
+            addToast('Task scheduled');
+          }
+        }
+        setTouchDragTask(null);touchTaskRef.current=null;
+      }else{
+        touchTaskRef.current=null;setTouchDragTask(null);
+      }
+      unlockBodyScroll();
       setTimeout(()=>{isTouchRef.current=false;},100);
     };
-    window.addEventListener('touchmove',onTouchMove,{passive:false});window.addEventListener('touchend',onTouchEnd);
-    return()=>{window.removeEventListener('touchmove',onTouchMove);window.removeEventListener('touchend',onTouchEnd);};
-  },[handleDragMove,handleDragEnd,getMin,findCol,addToast,startAS]);
+    const onTouchCancel=()=>{
+      clearTimeout(longPressTimer.current);clearTimeout(taskLongPressTimer.current);
+      touchColRef.current=null;touchTaskRef.current=null;setTouchDragTask(null);
+      unlockBodyScroll();
+      setTimeout(()=>{isTouchRef.current=false;},100);
+    };
+    window.addEventListener('touchmove',onTouchMove,{passive:false});
+    window.addEventListener('touchend',onTouchEnd);
+    window.addEventListener('touchcancel',onTouchCancel);
+    return()=>{
+      window.removeEventListener('touchmove',onTouchMove);
+      window.removeEventListener('touchend',onTouchEnd);
+      window.removeEventListener('touchcancel',onTouchCancel);
+    };
+  },[handleDragMove,handleDragEnd,getMin,findCol,addToast,unlockBodyScroll,lockBodyScroll]);
 
   useEffect(()=>{window.addEventListener('mousemove',onMM);window.addEventListener('mouseup',onMU);return()=>{window.removeEventListener('mousemove',onMM);window.removeEventListener('mouseup',onMU);};},[onMM,onMU]);
 
