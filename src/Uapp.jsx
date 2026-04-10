@@ -105,8 +105,7 @@ input[type="date"]{color-scheme:dark;}
 .today-line-dot{position:absolute;left:-5px;top:-5px;width:10px;height:10px;border-radius:50%;background:#f43f5e;box-shadow:0 0 8px rgba(244,63,94,.6);}
 .today-line-dot::after{content:'';position:absolute;inset:0;border-radius:50%;background:#f43f5e;animation:ping 1.5s cubic-bezier(0,0,.2,1) infinite;opacity:0;}
 @keyframes ping{75%,100%{transform:scale(2.5);opacity:0;}}
-.cal-event{transition: filter .15s, transform .15s;-webkit-tap-highlight-color: transparent; -webkit-user-select: none;user-select: none;-webkit-touch-callout: none;touch-action: none;
-}.cal-event:hover{filter:brightness(1.15);}
+.cal-event{transition:filter .15s,transform .15s;-webkit-tap-highlight-color:transparent;}.cal-event:hover{filter:brightness(1.15);}
 .tag-pill{display:inline-flex;align-items:center;gap:3px;padding:1px 7px;border-radius:999px;font-size:9px;font-weight:700;}
 .summary-card{border-radius:10px;padding:10px 14px;display:flex;align-items:center;gap:10px;border:1.5px solid var(--border);background:var(--surface);}
 .quick-act{padding:4px;border-radius:6px;border:none;background:transparent;cursor:pointer;color:var(--text3);transition:all .15s;display:flex;align-items:center;justify-content:center;-webkit-tap-highlight-color:transparent;}
@@ -539,29 +538,10 @@ export default function App(){
   const onMU=useCallback(()=>handleDragEnd(),[handleDragEnd]);
 
   const onColTouchStart=useCallback((e,dateStr)=>{
-    if (e.cancelable) e.preventDefault();
     if(modalOpen)return;isTouchRef.current=true;
     const t=e.touches[0];if(!t)return;
     const resEl=e.target.closest('[data-resize]');const evEl=e.target.closest('[data-event-id]');
-
-    if(evEl&&evEl.dataset.recurring==='true'){
-      touchColRef.current={startX:t.clientX,startY:t.clientY,dateStr,evId:evEl.dataset.eventId,isRec:true,resDir:null,startTime:Date.now(),moved:false,dragging:false,pressActivated:false};
-      return;
-    }
-
-    if(evEl&&!resEl){
-      const eid=evEl.dataset.eventId;const ev=evRef.current.find(x=>x.id===eid);if(!ev)return;
-      const min=getMinR(t.clientY,dateStr);
-      touchColRef.current={startX:t.clientX,startY:t.clientY,dateStr,evId:eid,isRec:false,resDir:null,startTime:Date.now(),moved:false,dragging:true,pressActivated:true};
-      dragRef.current={type:'move',eventId:eid,dateStr,offMin:min-ev.startMin,moved:false};
-      setDragType('move');
-      setMovId(eid);
-      lockBodyScroll();
-      startAS();
-      return;
-    }
-
-    touchColRef.current={startX:t.clientX,startY:t.clientY,dateStr,evId:null,isRec:false,resDir:resEl?.dataset?.resize||null,startTime:Date.now(),moved:false,dragging:false,pressActivated:false};
+    touchColRef.current={startX:t.clientX,startY:t.clientY,dateStr,evId:evEl?.dataset?.eventId||null,isRec:evEl?.dataset?.recurring==='true',resDir:resEl?.dataset?.resize||null,startTime:Date.now(),moved:false,dragging:false,pressActivated:false};
     clearTimeout(longPressTimer.current);
     longPressTimer.current=setTimeout(()=>{
       const tc=touchColRef.current;if(!tc||tc.moved||tc.dragging)return;
@@ -572,6 +552,15 @@ export default function App(){
         dragRef.current={type:`resize-${tc.resDir}`,eventId:tc.evId,dateStr};
         setDragType(`resize-${tc.resDir}`);
         setResId(tc.evId);
+        startAS();
+        return;
+      }
+      if(tc.evId&&!tc.isRec){
+        const ev=evRef.current.find(x=>x.id===tc.evId);if(!ev)return;
+        const min=getMinR(tc.startY,dateStr);
+        dragRef.current={type:'move',eventId:tc.evId,dateStr,offMin:min-ev.startMin,moved:false};
+        setDragType('move');
+        setMovId(tc.evId);
         startAS();
         return;
       }
@@ -599,15 +588,7 @@ export default function App(){
     const onTouchMove=(e)=>{
       const t=e.touches[0];if(!t)return;lastMouseY.current=t.clientY;
       const tc=touchColRef.current;
-      if(tc&&tc.evId&&tc.dragging&&dragRef.current?.type==='move'){
-        const dx=Math.abs(t.clientX-tc.startX),dy=Math.abs(t.clientY-tc.startY);
-        if(dx>4||dy>4){
-          tc.moved=true;
-          dragRef.current.moved=true;
-        }
-        if(e.cancelable) e.preventDefault();
-        handleDragMove(t.clientX,t.clientY);
-      }else if(tc&&!tc.dragging&&!tc.moved){
+      if(tc&&!tc.dragging&&!tc.moved){
         const dx=Math.abs(t.clientX-tc.startX),dy=Math.abs(t.clientY-tc.startY);
         if(dx>10||dy>10){
           tc.moved=true;
@@ -619,7 +600,8 @@ export default function App(){
             touchColRef.current=null;
           }
         }
-      }else if(tc&&tc.dragging&&dragRef.current?.type){if(e.cancelable) e.preventDefault();handleDragMove(t.clientX,t.clientY);}
+      }
+      if(tc&&tc.dragging&&dragRef.current?.type){e.preventDefault();handleDragMove(t.clientX,t.clientY);}
       const tt=touchTaskRef.current;
       if(tt&&!tt.active){
         const dx=Math.abs(t.clientX-tt.startX),dy=Math.abs(t.clientY-tt.startY);
