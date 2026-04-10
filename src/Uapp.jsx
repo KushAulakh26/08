@@ -105,7 +105,8 @@ input[type="date"]{color-scheme:dark;}
 .today-line-dot{position:absolute;left:-5px;top:-5px;width:10px;height:10px;border-radius:50%;background:#f43f5e;box-shadow:0 0 8px rgba(244,63,94,.6);}
 .today-line-dot::after{content:'';position:absolute;inset:0;border-radius:50%;background:#f43f5e;animation:ping 1.5s cubic-bezier(0,0,.2,1) infinite;opacity:0;}
 @keyframes ping{75%,100%{transform:scale(2.5);opacity:0;}}
-.cal-event{transition:filter .15s,transform .15s;-webkit-tap-highlight-color:transparent;}.cal-event:hover{filter:brightness(1.15);}
+.cal-event{transition: filter .15s, transform .15s;-webkit-tap-highlight-color: transparent; -webkit-user-select: none;user-select: none;-webkit-touch-callout: none;touch-action: none;
+}.cal-event:hover{filter:brightness(1.15);}
 .tag-pill{display:inline-flex;align-items:center;gap:3px;padding:1px 7px;border-radius:999px;font-size:9px;font-weight:700;}
 .summary-card{border-radius:10px;padding:10px 14px;display:flex;align-items:center;gap:10px;border:1.5px solid var(--border);background:var(--surface);}
 .quick-act{padding:4px;border-radius:6px;border:none;background:transparent;cursor:pointer;color:var(--text3);transition:all .15s;display:flex;align-items:center;justify-content:center;-webkit-tap-highlight-color:transparent;}
@@ -538,6 +539,7 @@ export default function App(){
   const onMU=useCallback(()=>handleDragEnd(),[handleDragEnd]);
 
   const onColTouchStart=useCallback((e,dateStr)=>{
+    if (e.cancelable) e.preventDefault();
     if(modalOpen)return;isTouchRef.current=true;
     const t=e.touches[0];if(!t)return;
     const resEl=e.target.closest('[data-resize]');const evEl=e.target.closest('[data-event-id]');
