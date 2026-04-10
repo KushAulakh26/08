@@ -30,6 +30,8 @@ const REC_TYPES=[{v:'none',l:'None'},{v:'daily',l:'Daily'},{v:'weekly',l:'Weekly
 const PROJ_COLORS=['#7d8a9a','#b09245','#6b9a7e','#a85c58','#8f849c','#6a9fad','#a87080','#8aaa50','#b08050','#6a9f96'];
 const NAV_VIEWS=[{id:'today',label:'Today',icon:Sun},{id:'inbox',label:'Inbox',icon:Inbox},{id:'next',label:'Next Actions',icon:Zap},{id:'projects',label:'Projects',icon:Folder},{id:'waiting',label:'Waiting For',icon:Clock},{id:'someday',label:'Someday/Maybe',icon:Lightbulb},{id:'calendar',label:'Calendar',icon:Calendar},{id:'review',label:'Weekly Review',icon:RefreshCw}];
 const REVIEW_STEPS=[{title:'Clear Inbox',desc:'Process every item in your inbox to zero.',icon:Inbox,key:'inbox'},{title:'Review Projects',desc:'Check each project for next actions.',icon:Folder,key:'projects'},{title:'Review Waiting',desc:'Follow up on delegated items.',icon:Clock,key:'waiting'},{title:'Review Someday',desc:'Promote or remove stale ideas.',icon:Lightbulb,key:'someday'},{title:'Plan Next Week',desc:'Set priorities and time-block.',icon:Calendar,key:'plan'}];
+const HOUR_OPTS=Array.from({length:24},(_,i)=>({value:i,label:String(i).padStart(2,'0')}));
+const MINUTE_OPTS=[0,15,30,45].map(m=>({value:m,label:String(m).padStart(2,'0')}));
 const spr={type:'spring',damping:22,stiffness:350};
 const sprG={type:'spring',damping:25,stiffness:300};
 
@@ -115,7 +117,69 @@ input[type="date"]{color-scheme:dark;}
 .touch-ghost{position:fixed;z-index:100;pointer-events:none;padding:8px 16px;border-radius:10px;background:linear-gradient(135deg,var(--accent),var(--violet));color:#1a1a1a;font-size:12px;font-weight:700;box-shadow:0 16px 48px rgba(0,0,0,0.6),0 0 0 2px rgba(196,182,156,0.4);max-width:200px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;display:flex;align-items:center;gap:6px;transform:translate(-50%,-130%);opacity:0.95;}
 .search-bar{position:relative;}.search-bar input{padding-left:30px;}
 .search-bar svg{position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--text3);}
+.themed-select-trigger{display:inline-flex;align-items:center;justify-content:space-between;gap:6px;padding:6px 10px;background:var(--surface3);border:1.5px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-family:'DM Sans',sans-serif;font-size:12px;font-weight:600;cursor:pointer;outline:none;transition:all .15s;white-space:nowrap;-webkit-tap-highlight-color:transparent;}
+.themed-select-trigger:hover{border-color:var(--border2);background:var(--surface2);}
+.themed-select-trigger:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-dim);}
+.themed-select-menu{background:var(--surface2);border:1.5px solid var(--border2);border-radius:10px;box-shadow:0 16px 48px rgba(0,0,0,0.65),0 0 0 1px rgba(255,255,255,0.04);overflow-y:auto;padding:4px;}
+.themed-select-option{display:flex;align-items:center;justify-content:space-between;padding:6px 10px;border-radius:6px;font-size:12px;font-weight:500;color:var(--text2);cursor:pointer;transition:background .1s,color .1s;white-space:nowrap;gap:8px;}
+.themed-select-option:hover{background:var(--surface3);color:var(--text);}
+.themed-select-option.active{background:var(--accent-dim);color:var(--accent);font-weight:700;}
+select{appearance:none;-webkit-appearance:none;background:var(--surface3);border:1.5px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-family:'DM Sans',sans-serif;font-size:12px;font-weight:600;padding:6px 26px 6px 10px;outline:none;cursor:pointer;transition:all .15s;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%238a8580' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 8px center;}
+select:hover{border-color:var(--border2);}
+select:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-dim);}
+select option{background:var(--surface2);color:var(--text);padding:6px 8px;}
 `;
+
+/* ---------- ThemedSelect ---------- */
+function ThemedSelect({value,onChange,options,width,placeholder}){
+  const[open,setOpen]=useState(false);
+  const wrapRef=useRef(null);
+  const menuRef=useRef(null);
+  const[menuStyle,setMenuStyle]=useState({});
+
+  useEffect(()=>{
+    if(!open)return;
+    const onOut=e=>{
+      if(wrapRef.current&&!wrapRef.current.contains(e.target)&&menuRef.current&&!menuRef.current.contains(e.target))setOpen(false);
+    };
+    const onScroll=()=>setOpen(false);
+    document.addEventListener('mousedown',onOut);
+    document.addEventListener('touchstart',onOut);
+    window.addEventListener('scroll',onScroll,true);
+    return()=>{document.removeEventListener('mousedown',onOut);document.removeEventListener('touchstart',onOut);window.removeEventListener('scroll',onScroll,true);};
+  },[open]);
+
+  const handleToggle=e=>{
+    e.preventDefault();e.stopPropagation();
+    if(!open&&wrapRef.current){
+      const rect=wrapRef.current.getBoundingClientRect();
+      const menuMaxH=Math.min(options.length*30+8,196);
+      const spaceBelow=window.innerHeight-rect.bottom-8;
+      const openUp=spaceBelow<menuMaxH;
+      setMenuStyle({position:'fixed',left:rect.left,width:Math.max(rect.width,60),maxHeight:196,zIndex:200,...(openUp?{bottom:window.innerHeight-rect.top+4}:{top:rect.bottom+4})});
+    }
+    setOpen(!open);
+  };
+
+  const sel=options.find(o=>o.value===value);
+
+  return(
+    <div ref={wrapRef} style={{position:'relative',display:'inline-flex'}}>
+      <button type="button" onClick={handleToggle} className="themed-select-trigger" style={{minWidth:width||'auto'}}>
+        <span style={{color:sel?'var(--text)':'var(--text3)'}}>{sel?sel.label:(placeholder||'Select')}</span>
+        <ChevronDown size={9} style={{color:'var(--text3)',transition:'transform 0.2s',transform:open?'rotate(180deg)':'rotate(0deg)',flexShrink:0}}/>
+      </button>
+      {open&&<div ref={menuRef} className="themed-select-menu" style={menuStyle} onClick={e=>e.stopPropagation()}>
+        {options.map(o=>(
+          <div key={o.value} className={`themed-select-option ${o.value===value?'active':''}`} onClick={e=>{e.stopPropagation();onChange(o.value);setOpen(false);}}>
+            <span>{o.label}</span>
+            {o.value===value&&<Check size={9} style={{color:'var(--accent)',flexShrink:0}}/>}
+          </div>
+        ))}
+      </div>}
+    </div>
+  );
+}
 
 /* ---------- SubtaskItem ---------- */
 function SubtaskItem({st,onToggle,onDel,onAddChild,depth,maxD}){
@@ -183,8 +247,6 @@ function EvModal({isOpen,onClose,onSave,onDelete,event,selDate,ds,de,categories,
   if(!isOpen)return null;
   const cc=categories.find(x=>x.id===cat);
   const date = event?.date || selDate || fmtDO(new Date());
-  const hourOptions = Array.from({length:24},(_,i)=>i);
-  const minuteOptions = [0,15,30,45];
 
   return(<AnimatePresence>{isOpen&&<motion.div initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} className="modal-overlay" onClick={onClose}>
     <motion.div initial={{opacity:0,scale:0.92,y:24}} animate={{opacity:1,scale:1,y:0}} exit={{opacity:0,scale:0.92}} transition={spr} className="modal-box" onClick={e=>e.stopPropagation()}>
@@ -197,17 +259,17 @@ function EvModal({isOpen,onClose,onSave,onDelete,event,selDate,ds,de,categories,
         </div>
         <div style={{marginBottom:16}}>
           <label style={{fontSize:10,fontWeight:700,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'0.06em',display:'block',marginBottom:8}}>Time</label>
-          <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
-            <div style={{display:'flex',alignItems:'center',gap:4,background:'var(--surface3)',borderRadius:8,padding:'4px 6px',border:'1.5px solid var(--border)'}}>
-              <select value={startHour} onChange={e=>setStartHour(parseInt(e.target.value))} style={{background:'var(--bg)',border:'none',color:'var(--text)',fontSize:12,fontWeight:600,outline:'none'}}>{hourOptions.map(h=><option key={h} value={h}>{String(h).padStart(2,'0')}</option>)}</select>
-              <span style={{color:'var(--text3)'}}>:</span>
-              <select value={startMinute} onChange={e=>setStartMinute(parseInt(e.target.value))} style={{background:'var(--bg)',border:'none',color:'var(--text)',fontSize:12,fontWeight:600,outline:'none'}}>{minuteOptions.map(m=><option key={m} value={m}>{String(m).padStart(2,'0')}</option>)}</select>
+          <div style={{display:'flex',alignItems:'center',gap:4,flexWrap:'wrap'}}>
+            <div style={{display:'flex',alignItems:'center',gap:3}}>
+              <ThemedSelect value={startHour} onChange={v=>setStartHour(v)} options={HOUR_OPTS} width={52}/>
+              <span style={{color:'var(--text3)',fontWeight:700,fontSize:13}}>:</span>
+              <ThemedSelect value={startMinute} onChange={v=>setStartMinute(v)} options={MINUTE_OPTS} width={52}/>
             </div>
-            <span style={{color:'var(--text3)',fontSize:12}}>–</span>
-            <div style={{display:'flex',alignItems:'center',gap:4,background:'var(--surface3)',borderRadius:8,padding:'4px 6px',border:'1.5px solid var(--border)'}}>
-              <select value={endHour} onChange={e=>setEndHour(parseInt(e.target.value))} style={{background:'var(--bg)',border:'none',color:'var(--text)',fontSize:12,fontWeight:600,outline:'none'}}>{hourOptions.map(h=><option key={h} value={h}>{String(h).padStart(2,'0')}</option>)}</select>
-              <span style={{color:'var(--text3)'}}>:</span>
-              <select value={endMinute} onChange={e=>setEndMinute(parseInt(e.target.value))} style={{background:'var(--bg)',border:'none',color:'var(--text)',fontSize:12,fontWeight:600,outline:'none'}}>{minuteOptions.map(m=><option key={m} value={m}>{String(m).padStart(2,'0')}</option>)}</select>
+            <span style={{color:'var(--text3)',fontSize:12,margin:'0 4px'}}>–</span>
+            <div style={{display:'flex',alignItems:'center',gap:3}}>
+              <ThemedSelect value={endHour} onChange={v=>setEndHour(v)} options={HOUR_OPTS} width={52}/>
+              <span style={{color:'var(--text3)',fontWeight:700,fontSize:13}}>:</span>
+              <ThemedSelect value={endMinute} onChange={v=>setEndMinute(v)} options={MINUTE_OPTS} width={52}/>
             </div>
           </div>
           <p style={{fontSize:10,color:'var(--text3)',marginTop:4}}>Duration: {Math.round((endMin - startMin) / 60 * 10) / 10}h</p>
