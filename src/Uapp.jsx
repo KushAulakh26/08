@@ -120,7 +120,7 @@ input[type="date"]{color-scheme:dark;}
 .themed-select-trigger{display:inline-flex;align-items:center;justify-content:space-between;gap:6px;padding:6px 10px;background:var(--surface3);border:1.5px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-family:'DM Sans',sans-serif;font-size:12px;font-weight:600;cursor:pointer;outline:none;transition:all .15s;white-space:nowrap;-webkit-tap-highlight-color:transparent;}
 .themed-select-trigger:hover{border-color:var(--border2);background:var(--surface2);}
 .themed-select-trigger:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-dim);}
-.themed-select-menu{background:var(--surface2);border:1.5px solid var(--border2);border-radius:10px;box-shadow:0 16px 48px rgba(0,0,0,0.65),0 0 0 1px rgba(255,255,255,0.04);overflow-y:auto;padding:4px;}
+.themed-select-menu{background:var(--surface2);border:1.5px solid var(--border2);border-radius:10px;box-shadow:0 16px 48px rgba(0,0,0,0.65),0 0 0 1px rgba(255,255,255,0.04);overflow-y:auto;overflow-x:hidden;padding:4px;-webkit-overflow-scrolling:touch;touch-action:pan-y;overscroll-behavior:contain;}
 .themed-select-option{display:flex;align-items:center;justify-content:space-between;padding:6px 10px;border-radius:6px;font-size:12px;font-weight:500;color:var(--text2);cursor:pointer;transition:background .1s,color .1s;white-space:nowrap;gap:8px;}
 .themed-select-option:hover{background:var(--surface3);color:var(--text);}
 .themed-select-option.active{background:var(--accent-dim);color:var(--accent);font-weight:700;}
@@ -130,7 +130,7 @@ select:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-dim);}
 select option{background:var(--surface2);color:var(--text);padding:6px 8px;}
 `;
 
-/* ---------- ThemedSelect ---------- */
+/* ---------- ThemedSelect (FIXED: scroll inside dropdown) ---------- */
 function ThemedSelect({value,onChange,options,width,placeholder}){
   const[open,setOpen]=useState(false);
   const wrapRef=useRef(null);
@@ -139,14 +139,28 @@ function ThemedSelect({value,onChange,options,width,placeholder}){
 
   useEffect(()=>{
     if(!open)return;
+
+    /* Close on click/tap outside */
     const onOut=e=>{
-      if(wrapRef.current&&!wrapRef.current.contains(e.target)&&menuRef.current&&!menuRef.current.contains(e.target))setOpen(false);
+      if(menuRef.current && (menuRef.current===e.target || menuRef.current.contains(e.target))) return;
+      if(wrapRef.current && wrapRef.current.contains(e.target)) return;
+      setOpen(false);
     };
-    const onScroll=()=>setOpen(false);
+
+    /* Close on background scroll — but NOT if scrolling inside the menu */
+    const onScroll=e=>{
+      if(menuRef.current && (menuRef.current===e.target || menuRef.current.contains(e.target))) return;
+      setOpen(false);
+    };
+
     document.addEventListener('mousedown',onOut);
     document.addEventListener('touchstart',onOut);
     window.addEventListener('scroll',onScroll,true);
-    return()=>{document.removeEventListener('mousedown',onOut);document.removeEventListener('touchstart',onOut);window.removeEventListener('scroll',onScroll,true);};
+    return()=>{
+      document.removeEventListener('mousedown',onOut);
+      document.removeEventListener('touchstart',onOut);
+      window.removeEventListener('scroll',onScroll,true);
+    };
   },[open]);
 
   const handleToggle=e=>{
@@ -163,13 +177,25 @@ function ThemedSelect({value,onChange,options,width,placeholder}){
 
   const sel=options.find(o=>o.value===value);
 
+  /* Stop touch events from reaching global gesture handlers */
+  const stopTouch=useCallback(e=>{e.stopPropagation();},[]);
+
   return(
     <div ref={wrapRef} style={{position:'relative',display:'inline-flex'}}>
       <button type="button" onClick={handleToggle} className="themed-select-trigger" style={{minWidth:width||'auto'}}>
         <span style={{color:sel?'var(--text)':'var(--text3)'}}>{sel?sel.label:(placeholder||'Select')}</span>
         <ChevronDown size={9} style={{color:'var(--text3)',transition:'transform 0.2s',transform:open?'rotate(180deg)':'rotate(0deg)',flexShrink:0}}/>
       </button>
-      {open&&<div ref={menuRef} className="themed-select-menu" style={menuStyle} onClick={e=>e.stopPropagation()}>
+      {open&&<div
+        ref={menuRef}
+        className="themed-select-menu"
+        style={menuStyle}
+        onClick={e=>e.stopPropagation()}
+        onTouchStart={stopTouch}
+        onTouchMove={stopTouch}
+        onTouchEnd={stopTouch}
+        onMouseDown={e=>e.stopPropagation()}
+      >
         {options.map(o=>(
           <div key={o.value} className={`themed-select-option ${o.value===value?'active':''}`} onClick={e=>{e.stopPropagation();onChange(o.value);setOpen(false);}}>
             <span>{o.label}</span>
@@ -432,7 +458,6 @@ export default function App(){
   const getProjectProgress=useCallback(pid=>{const dt=tasks.filter(t=>t.project===pid);const ch=projects.filter(p=>p.parentId===pid);let total=dt.length,done=dt.filter(t=>t.status==='done').length;ch.forEach(c=>{const cp=getProjectProgress(c.id);total+=cp.total;done+=cp.done;});return{total,done,pct:total>0?Math.round((done/total)*100):0};},[tasks,projects]);
   const weekDays=useMemo(()=>{const d=new Date(cd.year,cd.month,cd.day);const dow=d.getDay();const mo=dow===0?-6:1-dow;const mon=new Date(d);mon.setDate(d.getDate()+mo);return Array.from({length:7},(_,i)=>{const dd=new Date(mon);dd.setDate(mon.getDate()+i);return{date:dd,dateStr:fmtDO(dd),dayName:DAYS_SHORT[i],dayNum:dd.getDate(),isToday:fmtDO(dd)===todayStr};});},[cd,todayStr]);
   const calCells=useMemo(()=>{const dim=gDIM(cd.year,cd.month),fd=gMDOW(cd.year,cd.month),pDim=cd.month===0?gDIM(cd.year-1,11):gDIM(cd.year,cd.month-1);const c=[];for(let i=fd-1;i>=0;i--)c.push({day:pDim-i,current:false,month:cd.month===0?11:cd.month-1,year:cd.month===0?cd.year-1:cd.year});for(let d=1;d<=dim;d++)c.push({day:d,current:true,month:cd.month,year:cd.year});const rem=42-c.length;for(let d=1;d<=rem;d++)c.push({day:d,current:false,month:cd.month===11?0:cd.month+1,year:cd.month===11?cd.year+1:cd.year});return c;},[cd.year,cd.month]);
-  const overallProg=tasks.length>0?Math.round((doneTasks.length/tasks.length)*100):0;
   const searchResults=useMemo(()=>{if(!globalSearch.trim())return[];const q=globalSearch.toLowerCase();return tasks.filter(t=>t.title.toLowerCase().includes(q)||(t.notes||'').toLowerCase().includes(q)).slice(0,8);},[tasks,globalSearch]);
   const ringData=useMemo(()=>{const done=todayDoneCount;const todo=todayTasks.length;if(done===0&&todo===0)return[{v:0},{v:1}];return[{v:done},{v:Math.max(todo,0)}];},[todayDoneCount,todayTasks.length]);
   const todayPct=useMemo(()=>{const total=todayDoneCount+todayTasks.length;return total>0?Math.round((todayDoneCount/total)*100):0;},[todayDoneCount,todayTasks.length]);
@@ -533,7 +558,7 @@ export default function App(){
 
   const renderDetail=()=>{
     if(!selectedTask)return(<div className="empty-state"><div className="empty-icon"><Eye size={22} style={{color:'var(--text3)'}}/></div><p className="empty-title">No task selected</p><p className="empty-sub">Click any task to view details</p></div>);
-    const stCount=countSt(selectedTask.subtasks);const en=ENERGY.find(e=>e.id===selectedTask.energy);const taskTags=(selectedTask.tags||[]).map(tid=>tags.find(t=>t.id===tid)).filter(Boolean);const projPath=selectedTask.project?getProjectPath(selectedTask.project):[];
+    const stCount=countSt(selectedTask.subtasks);const en=ENERGY.find(e=>e.id===selectedTask.energy);const projPath=selectedTask.project?getProjectPath(selectedTask.project):[];
     const handleStToggle=id=>updateTask(selectedTask.id,{subtasks:toggleStInTree(selectedTask.subtasks,id)});const handleStDel=id=>updateTask(selectedTask.id,{subtasks:delStFromTree(selectedTask.subtasks,id)});const handleStAddChild=(pid,title)=>updateTask(selectedTask.id,{subtasks:addStChild(selectedTask.subtasks,pid,{id:Date.now()+Math.random(),title,done:false,subtasks:[]})});
     return(<div style={{padding:16,overflowY:'auto',height:'100%'}}>
       <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:12}}>
@@ -716,7 +741,6 @@ export default function App(){
   return(<>
     <style>{CSS}</style>
     <div style={{display:'flex',height:'100vh',background:'var(--bg)',overflow:'hidden',fontFamily:'DM Sans,system-ui,sans-serif'}}>
-      {/* Sidebar */}
       <AnimatePresence>{!sideCollapsed&&(
         <motion.aside initial={{width:0,opacity:0}} animate={{width:210,opacity:1}} exit={{width:0,opacity:0}} transition={sprG} style={{background:'var(--surface)',display:'flex',flexDirection:'column',flexShrink:0,zIndex:40,overflow:'hidden',borderRight:'1px solid var(--border)'}}>
           <div style={{padding:'12px 10px 8px',display:'flex',alignItems:'center',gap:8}}><div style={{width:30,height:30,borderRadius:10,background:'linear-gradient(135deg,var(--accent),var(--violet))',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,boxShadow:'0 4px 12px rgba(196,182,156,0.2)'}}><Target size={14} style={{color:'#1a1a1a'}}/></div><span style={{color:'var(--text)',fontWeight:800,fontSize:15,whiteSpace:'nowrap'}}>FlowMind</span><button onClick={()=>setSideCollapsed(true)} style={{marginLeft:'auto',padding:4,cursor:'pointer',border:'none',background:'transparent',borderRadius:6,color:'var(--text3)'}}><PanelLeftClose size={13}/></button></div>
@@ -727,7 +751,6 @@ export default function App(){
       )}</AnimatePresence>
 
       <div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden'}}>
-        {/* Top bar */}
         <div style={{height:44,flexShrink:0,borderBottom:'1px solid var(--border)',background:'var(--surface)',display:'flex',alignItems:'center',padding:'0 12px',gap:8}}>
           <button onClick={()=>setSideCollapsed(!sideCollapsed)} className="quick-act" style={{padding:6}}><Menu size={15}/></button>
           <div style={{width:1,height:18,background:'var(--border)'}}/>
@@ -747,7 +770,6 @@ export default function App(){
           <button onClick={()=>setShowCapture(true)} className="fm-btn fm-btn-primary" style={{padding:'6px 12px',fontSize:12}}><Plus size={12}/>Capture <kbd style={{marginLeft:4,opacity:0.7,fontSize:9,background:'rgba(0,0,0,0.2)',borderRadius:3,padding:'1px 4px'}}>N</kbd></button>
         </div>
 
-        {/* Main content */}
         <div style={{flex:1,display:'flex',overflow:'hidden'}}>
           {view==='today'?renderTodayView():view==='calendar'?(
             <div style={{display:'flex',flex:1,overflow:'hidden'}}><div style={{flex:1,overflow:'hidden',padding:16,display:'flex',flexDirection:'column'}}>{renderCalendarView()}</div><AnimatePresence>{selectedTask&&<motion.div initial={{width:0,opacity:0}} animate={{width:280,opacity:1}} exit={{width:0,opacity:0}} transition={sprG} style={{flexShrink:0,overflow:'hidden',background:'var(--surface)',borderLeft:'1px solid var(--border)'}}><div style={{width:280,height:'100%'}}>{renderDetail()}</div></motion.div>}</AnimatePresence><aside style={{display:'flex',flexDirection:'column',width:200,flexShrink:0,borderLeft:'1px solid var(--border)',overflowY:'auto',background:'var(--surface)'}}><div style={{padding:'12px 12px 8px'}}><MiniCal cd={cd} events={filteredEvents} onSelect={(y,m,d)=>{setCd({year:y,month:m,day:d});setSelDate(fmtD(y,m,d));}} sq={sq} setSq={setSq}/></div></aside></div>
@@ -755,13 +777,10 @@ export default function App(){
         </div>
       </div>
 
-      {/* Touch drag ghost */}
       <AnimatePresence>{touchDragTask&&(<motion.div initial={{opacity:0,scale:0.8}} animate={{opacity:1,scale:1}} exit={{opacity:0,scale:0.8}} className="touch-ghost" style={{left:touchDragTask.x,top:touchDragTask.y}}><Calendar size={11}/>{touchDragTask.title}</motion.div>)}</AnimatePresence>
 
-      {/* Capture modal */}
       <AnimatePresence>{showCapture&&(<motion.div initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} className="modal-overlay" style={{alignItems:'flex-start',paddingTop:'15vh'}} onClick={()=>setShowCapture(false)}><motion.div initial={{y:-16,opacity:0,scale:0.96}} animate={{y:0,opacity:1,scale:1}} exit={{y:-16,opacity:0,scale:0.96}} transition={spr} className="modal-box" onClick={e=>e.stopPropagation()}><div style={{padding:'16px 18px'}}><div style={{display:'flex',alignItems:'center',gap:8,marginBottom:12}}><div style={{width:28,height:28,borderRadius:8,background:'var(--accent-dim)',display:'flex',alignItems:'center',justifyContent:'center'}}><Brain size={13} style={{color:'var(--accent)'}}/></div><h3 style={{fontSize:15,fontWeight:800,color:'var(--text)'}}>Quick Capture</h3><span style={{marginLeft:'auto',fontSize:10,color:'var(--text3)',background:'var(--surface3)',padding:'2px 6px',borderRadius:4,fontFamily:'DM Mono'}}>ESC</span></div><input ref={captureRef} value={captureInput} onChange={e=>setCaptureInput(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')handleCapture();if(e.key==='Escape')setShowCapture(false);}} placeholder="What's on your mind?..." className="fm-input" style={{fontSize:15,padding:'12px 14px'}}/><div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginTop:12}}><p style={{fontSize:11,color:'var(--text3)',display:'flex',alignItems:'center',gap:5}}><Inbox size={10}/>Goes to Inbox</p><button onClick={handleCapture} className="fm-btn fm-btn-primary" style={{padding:'8px 16px'}}><Send size={11}/>Capture</button></div></div></motion.div></motion.div>)}</AnimatePresence>
 
-      {/* Process modal */}
       <AnimatePresence>{procTaskId&&(()=>{const pt=tasks.find(t=>t.id===procTaskId);if(!pt)return null;return(
         <motion.div key="proc" initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} className="modal-overlay" onClick={()=>{setProcTaskId(null);setProcStep(0);}}>
           <motion.div initial={{scale:0.92,opacity:0}} animate={{scale:1,opacity:1}} exit={{scale:0.92,opacity:0}} transition={spr} className="modal-box" onClick={e=>e.stopPropagation()}>
@@ -792,10 +811,8 @@ export default function App(){
           </motion.div>
         </motion.div>);})()}</AnimatePresence>
 
-      {/* Delete Project Confirm */}
       <AnimatePresence>{confirmDeleteProj!==null&&(<motion.div initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} className="modal-overlay" onClick={()=>setConfirmDeleteProj(null)}><motion.div initial={{scale:0.92,opacity:0}} animate={{scale:1,opacity:1}} exit={{scale:0.92,opacity:0}} transition={spr} className="modal-box" style={{maxWidth:380}} onClick={e=>e.stopPropagation()}><div style={{padding:20}}><div style={{width:48,height:48,borderRadius:14,background:'rgba(191,90,90,0.10)',display:'flex',alignItems:'center',justifyContent:'center',margin:'0 auto 14px'}}><Trash2 size={20} style={{color:'var(--rose)'}}/></div><h3 style={{fontSize:16,fontWeight:800,color:'var(--text)',textAlign:'center',marginBottom:6}}>Delete Project?</h3><p style={{fontSize:12,color:'var(--text3)',textAlign:'center'}}>Tasks unlinked. Child projects also removed.</p><div style={{display:'flex',gap:8,marginTop:18}}><button onClick={()=>setConfirmDeleteProj(null)} className="fm-btn fm-btn-ghost" style={{flex:1,justifyContent:'center'}}>Cancel</button><button onClick={()=>deleteProjectRecursive(confirmDeleteProj)} className="fm-btn fm-btn-danger" style={{flex:1,justifyContent:'center'}}><Trash2 size={12}/>Delete</button></div></div></motion.div></motion.div>)}</AnimatePresence>
 
-      {/* Focus Mode */}
       <AnimatePresence>{showFocus&&(()=>{const ft=tasks.find(t=>t.id===focusTaskId);if(!ft)return null;return(
         <motion.div key="focus" initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} style={{position:'fixed',inset:0,background:'var(--bg)',zIndex:50,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',padding:32}}>
           <button onClick={()=>{setShowFocus(false);setPomRun(false);}} style={{position:'absolute',top:20,right:20,display:'flex',alignItems:'center',gap:6,padding:'6px 12px',borderRadius:8,cursor:'pointer',border:'1.5px solid var(--border)',background:'transparent',color:'var(--text2)',fontSize:11,fontWeight:600}}><Minimize2 size={12}/>Exit</button>
@@ -814,10 +831,8 @@ export default function App(){
 
       <EvModal isOpen={modalOpen} onClose={()=>setModalOpen(false)} onSave={handleSaveEv} onDelete={handleDelEv} event={editEv} selDate={selDate} ds={ds} de={de} categories={categories} onAddCat={addCategory}/>
 
-      {/* Reminders */}
       <AnimatePresence>{reminders.length>0&&(<div style={{position:'fixed',bottom:70,right:20,zIndex:55,display:'flex',flexDirection:'column',gap:8}}>{reminders.map(r=>(<motion.div key={r.taskId} initial={{opacity:0,x:50}} animate={{opacity:1,x:0}} exit={{opacity:0,x:50}} transition={spr}><div className="reminder-card"><div style={{display:'flex',alignItems:'center',gap:8}}><div style={{width:28,height:28,borderRadius:8,background:r.type==='overdue'?'rgba(191,90,90,0.12)':'rgba(201,160,67,0.12)',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>{r.type==='overdue'?<AlertCircle size={12} style={{color:'var(--rose)'}}/>:<Bell size={12} style={{color:'var(--amber)'}}/>}</div><div style={{flex:1,minWidth:0}}><p style={{fontSize:11,fontWeight:700,color:'var(--text)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{r.title}</p><p style={{fontSize:10,color:r.type==='overdue'?'var(--rose)':'var(--text3)'}}>{r.type==='overdue'?'Overdue!':r.type==='due-today'?'Due today':'High priority'}</p></div><button onClick={()=>setDismissedReminders(p=>({...p,[r.taskId]:true}))} className="quick-act"><X size={10}/></button></div></div></motion.div>))}</div>)}</AnimatePresence>
 
-      {/* Toasts */}
       <div style={{position:'fixed',bottom:20,left:'50%',transform:'translateX(-50%)',zIndex:60,display:'flex',flexDirection:'column-reverse',gap:6,alignItems:'center',pointerEvents:'none'}}>
         <AnimatePresence>{toasts.map(t=>(<motion.div key={t.id} initial={{opacity:0,y:16,scale:0.9}} animate={{opacity:1,y:0,scale:1}} exit={{opacity:0,y:-10,scale:0.9}} transition={spr} style={{padding:'8px 16px',borderRadius:10,fontSize:12,fontWeight:600,color:'var(--text)',background:'var(--surface)',boxShadow:'0 8px 24px rgba(0,0,0,0.6)',border:'1.5px solid var(--border2)',whiteSpace:'nowrap',pointerEvents:'auto'}}>{t.msg}</motion.div>))}</AnimatePresence>
       </div>
